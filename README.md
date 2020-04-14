@@ -1,4 +1,4 @@
-#browscli
+# browscli
 
 ![Image of browscli](https://raw.githubusercontent.com/h43z/browscli/master/logo.jpeg)
 
