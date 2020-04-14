@@ -1,0 +1,27 @@
+{
+  "manifest_version": 2,
+  "name": "browscli",
+  "description": "browscli description",
+  "version": "0.1.0",
+  "permissions": [
+    "tabs",
+    "storage",
+    "<all_urls>"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ],
+    "persistent": false
+  },
+  "applications": {
+    "gecko": {
+      "id": "browscli@h43z"
+    }
+  },
+  "options_ui": {
+    "page": "options.html",
+    "browser_style": true,
+    "chrome_style": true
+  }
+}
