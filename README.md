@@ -1,22 +1,63 @@
 # browscli
 
-![Image of browscli](https://raw.githubusercontent.com/h43z/browscli/master/logo.jpeg)
+<img src="https://raw.githubusercontent.com/h43z/browscli/master/logo.jpeg" width="340">
 
-Start server, install extension, send commdands with client.
+Send commands to you browser from the terminal. Get a list of tabs or inject
+code into websites and more. Code is held to a minimum to be easily readable.
 
-Get `browserid` from extension preferences in browser.
-Client has 2 commands ls (list tabs with lots of info) and inject (inject code into website).
+This project makes use of [native messaging](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Native_messaging).
+
+First install the extension. Next setup the native messaging manifest file.
+(This is an example for linux ubuntu and firefox)
+
 ```
-cd client
-node index.js browserid ls
-node index.js browserid inject tabid "window.location.href"
+cat << EOF >> ~/.mozilla/native-messaging-hosts/browscli.json
+{
+  "name": "browscli",
+  "description": "browscli native message proxy",
+  "path": "$PWD/browscli-nmh.mjs",
+  "type": "stdio",
+  "allowed_extensions": [ "browscli@h43z" ]
+}
+EOF
 
+# if you run firefox from snap/flatpak you have to give it this permission
+flatpak permission-set webextensions browscli snap.firefox yes
 ```
 
-demo -> https://twitter.com/h43z/status/1249489052103061507
+Make sure you set the right path to the `browscli-nmh.mjs` nodejs script.
 
-Browscli "breaks out" of the sandbox context of a extension to have full 
-(read/write) access to the DOM and window object.
+Every browser instance with a setup native messaging manifest will start the
+browscli native messaging host node script when started. The extension can then
+talk to this script. The script creates a unix socket file `/tmp/browscli.socket.*`.
+
+You can use this socket to send commands to the extension and receive the response.
+Use whatever tools you want to talk to this unix socket.
+
+```
+# using netcat to connect to socket and providing the input via stdin.
+# piping the output through jq
+
+echo '{"cmd":"list"}' | nc -U /tmp/browscli.socket.0 | jq .
+
+# injection js code into tab with id 24
+# making use of timeout to automatically close netcat after one second
+echo '{"cmd":"inject", "args": [24, "location.href"]}' | timeout 1 nc -U /tmp/browscli.socket.0
+
+# extracting all tab titles and urls with jq
+echo '{"cmd":"list"}' | timeout 1 nc -U /tmp/browscli.socket.0 | jq -r '.[] | "\(.title) \(.url)"'
+
+# focusing tab with id 5
+# sending command against another browser instace of firefox
+echo '{"cmd":"focus", "args": [5]}' | timeout 1 nc -U /tmp/browscli.socket.1
+```
+
+Every browser instance will spawn it's on native messaging host application and
+also use a seperate socket file.
+
+
+Browscli "breaks out" of the sandbox context of a extension to have full (read/write)
+access to the DOM and window object of a website.
 
 The fun happens here in the extension
 ```

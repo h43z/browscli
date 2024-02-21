@@ -1,0 +1,15 @@
+{
+  "description": "browscli",
+  "manifest_version": 2,
+  "name": "browscli",
+  "version": "0.0.1",
+  "background": {
+    "scripts": ["background-script.js"]
+  },
+  "permissions": ["nativeMessaging", "tabs", "activeTab", "<all_urls>"],
+  "applications": {
+    "gecko": {
+      "id": "browscli@h43z"
+    }
+  }
+}
