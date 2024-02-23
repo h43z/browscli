@@ -6,6 +6,15 @@ let msgLen = 0
 let dataLen = 0
 let input = []
 
+;['SIGINT','SIGTERM'].forEach(signal => {
+  process.on(signal, async _ => {
+    try{
+      await unlink(socketFile)
+    }catch(e){}
+    process.exit(0)
+  })
+})
+
 process.stdin.on('readable', _ => {
   let chunk
   while(chunk = process.stdin.read()){
@@ -26,10 +35,6 @@ process.stdin.on('readable', _ => {
       input = []
     }
   }
-})
-
-process.on('SIGTERM', async _ => {
-  await unlink(socketFile)
 })
 
 process.on('uncaughtException', err => {
