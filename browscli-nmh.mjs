@@ -1,16 +1,19 @@
 #!/usr/bin/env node
-import { unlink, access } from 'node:fs/promises'
+import { unlink, access, chmod } from 'node:fs/promises'
 import { createServer } from 'net'
 
 let msgLen = 0
 let dataLen = 0
 let input = []
 
-;['SIGINT','SIGTERM'].forEach(signal => {
+const events = ['SIGINT','SIGTERM']
+
+events.forEach(signal => {
   process.on(signal, async _ => {
     try{
       await unlink(socketFile)
-    }catch(e){}
+    }catch(error){}
+
     process.exit(0)
   })
 })
@@ -18,18 +21,16 @@ let input = []
 process.stdin.on('readable', _ => {
   let chunk
   while(chunk = process.stdin.read()){
-    if (msgLen === 0 && dataLen === 0){
+    if(msgLen === 0 && dataLen === 0){
       msgLen = chunk.readUInt32LE(0)
       chunk = chunk.subarray(4)
     }
     dataLen += chunk.length
     input.push(chunk)
     if(dataLen === msgLen){
-      if(clients.length){
-        clients.forEach(client => {
-          client.write(Buffer.concat(input).toString() + '\n')
-        })
-      }
+      clients?.forEach(client => {
+        client.write(Buffer.concat(input).toString() + '\n')
+      })
       msgLen = 0
       dataLen = 0
       input = []
@@ -37,8 +38,8 @@ process.stdin.on('readable', _ => {
   }
 })
 
-process.on('uncaughtException', err => {
-  sendMessage({error: err.toString()})
+process.on('uncaughtException', error => {
+  sendMessage({error: error.toString()})
 })
 
 const sendMessage = json => {
@@ -50,16 +51,16 @@ const sendMessage = json => {
 }
 
 const clients = []
-const server = createServer(con => {
-  clients.push(con)
+const server = createServer(client => {
+  clients.push(client)
 
-  con.on('data', data => {
+  client.on('data', data => {
     const json = JSON.parse(data.toString())
     sendMessage(json)
   })
 
-  con.on('end', _ => {
-    const index = clients.indexOf(con)
+  client.on('end', _ => {
+    const index = clients.indexOf(client)
     if(index !== -1) {
       clients.splice(index, 1)
     }
@@ -81,4 +82,6 @@ try{
 if(!found)
   process.exit(1)
 
-server.listen(socketFile)
+server.listen(socketFile, async _ => {
+  await chmod(socketFile, 0o600)
+})

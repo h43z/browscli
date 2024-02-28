@@ -2,12 +2,14 @@
 
 <img src="https://raw.githubusercontent.com/h43z/browscli/master/logo.jpeg" width="340">
 
-Send commands to you browser from the terminal. Get a list of tabs or inject
-code into websites and more. Code is held to a minimum to be easily readable.
+creates a unix socket that allows bidirectional communication with your browser.
+
+Javascript code sent to the socket is evaluated in the browscli **extension context**.
+The completion value of the evaluated code is send back through the socket.
 
 This project makes use of [native messaging](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Native_messaging).
 
-First install the extension. Next setup the native messaging manifest file.
+First install the [extension](https://addons.mozilla.org/en-US/firefox/addon/browscli/). Next setup the native messaging manifest file.
 (This is an example for linux ubuntu and firefox)
 
 ```
@@ -27,75 +29,50 @@ flatpak permission-set webextensions browscli snap.firefox yes
 
 Make sure you set the right path to the `browscli-nmh.mjs` nodejs script.
 
-Every browser instance with a setup native messaging manifest will start the
-browscli native messaging host node script when started. The extension can then
-talk to this script. The script creates a unix socket file `/tmp/browscli.socket.*`.
+Every browser profile will spawn its own native messaging host node script and
+creates its own socket file at `/tmp/browscli.socket.*`.
 
-You can use this socket to send commands to the extension and receive the response.
-Use whatever tools you want to talk to this unix socket.
+Use whatever tools or programming languange you want to talk to this unix socket.
 
+Examples of using basic linux tools
+```sh
+# eval 1+2 and read the response
+echo '"1+2"' | nc -U /tmp/browscli.socket.0
+
+# get list of browser tabs via the tabs.query api, quit after receiving
+# response and make output pretty
+echo '"browser.tabs.query({})"' | nc -U /tmp/browscli.socket.0 | head -1 | jq .
+
+# inject content script into tab with id 60
+echo '"browser.tabs.executeScript(60, {code:`alert(1)`})"' | nc -U /tmp/browscli.socket.0
+
+# inject content script and break out of it via window.eval to get
+# access dom and js variables of page loaded in tab with id 43
+# https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Content_scripts#content_script_environment
+echo '"browser.tabs.executeScript(43, {code:`window.eval(\"x\")`})"' | nc -U /tmp/browscli.socket.0
+
+# tell browser to focus the tab with id 60
+echo '"browser.tabs.update(60,{active: true})"' | nc -U /tmp/browscli.socket.0
 ```
-# using netcat to connect to socket and providing the input via stdin.
-# piping the output through jq
 
-echo '{"cmd":"list"}' | nc -U /tmp/browscli.socket.0 | jq .
+Example of talking to the socket using nodejs
+```js
+const net = require('net')
+const fs = require('fs')
 
-# injection js code into tab with id 24
-# making use of timeout to automatically close netcat after one second
-echo '{"cmd":"inject", "args": [24, "location.href"]}' | timeout 1 nc -U /tmp/browscli.socket.0
+const socket = net.createConnection('/tmp/browscli.socket.0', _ => {
+  // code to get list of tabs
+  const code = 'browser.tabs.query({})'
+  // extension expects JSON
+  socket.write(JSON.stringify(code))
+})
 
-# extracting all tab titles and urls with jq
-echo '{"cmd":"list"}' | timeout 1 nc -U /tmp/browscli.socket.0 | jq -r '.[] | "\(.title) \(.url)"'
-
-# focusing tab with id 5
-# sending command against another browser instace of firefox
-echo '{"cmd":"focus", "args": [5]}' | timeout 1 nc -U /tmp/browscli.socket.1
-```
-
-Every browser instance will spawn it's on native messaging host application and
-also use a seperate socket file.
-
-
-Browscli "breaks out" of the sandbox context of a extension to have full (read/write)
-access to the DOM and window object of a website.
-
-The fun happens here in the extension
-```
-// code string is coming from the client cli
-
-function createContentScript(code){
-  return `
-    new Promise(resolve => {
-      var s = document.createElement('script');
-      s.text = \`
-        try{
-          var response = eval(\\\`${code}\\\`);
-        }catch(e){
-          var response = e.message
-        }
-        document.currentScript.dispatchEvent(new CustomEvent('eval', {
-          detail: response
-        }));
-        document.currentScript.parentElement.removeChild(document.currentScript);
-       \`;
-      s.addEventListener('eval', e => {
-        resolve(e.detail)
-      })
-      document.documentElement.prepend(s);
-    })
-  `
-}
-
-return browser.tabs.executeScript(parseInt(tabId), {
-  code: createContentScript(code),
-  runAt
+let response = []
+socket.on('data', data => {
+  response.push(data)
+  if(data.toString().endsWith('\n')){
+    console.log('Received  from server:', response.join(""))
+    response = []
+  }
 })
 ```
-
-browser.tabs.executeScript allows an extension to inject string that gets
-evaluated in a content script. Content scripts though run in their own
-safe context (security feature, so websites cannot mess with extensions).
-To "bypass" this and gain full access to the underlying website the content script
-will dynamically create script element and inject it into the the actual website.
-The scripts element javascript code will then `eval` the user provided code from
-the cli propagate the response back.
